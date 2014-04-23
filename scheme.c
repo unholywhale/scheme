@@ -3,7 +3,7 @@
 #include <string.h>
 #include <ctype.h>
 
-typedef enum {BOOLEAN, FIXNUM} object_type;
+typedef enum {BOOLEAN, CHARACTER, FIXNUM} object_type;
 
 typedef struct {
   object_type type;
@@ -14,6 +14,9 @@ typedef struct {
     struct {
       char value;
     } boolean;
+    struct {
+      char value;
+    } character;
   } data;
 } object;
 
@@ -38,12 +41,23 @@ object *make_fixnum(long value) {
   return obj;
 }
 
+object *make_character(char value) {
+  object *obj = alloc_object();
+  obj->type = CHARACTER;
+  obj->data.character.value = value;
+  return obj;
+}
+
 char is_fixnum(object *obj) {
   return obj->type == FIXNUM;
 }
 
 char is_boolean(object *obj) {
   return obj->type == BOOLEAN;
+}
+
+char is_character(object *obj) {
+  return obj->type == CHARACTER;
 }
 
 char is_false(object *obj) {
@@ -54,7 +68,7 @@ char is_true(object *obj) {
   return !is_false(obj);
 }
 
-char is_delimeter(int c) {
+char is_delimiter(int c) {
   return isspace(c) || c == EOF ||
           c == '('  || c == ')' ||
           c == '"'  || c == ';';
@@ -85,6 +99,25 @@ int peek(FILE *in) {
   return c;
 }
 
+void peek_expected_delimiter(FILE *in) {
+  if (!is_delimiter(peek(in))) {
+    fprintf(stderr, "character not followed by delimiter");
+    exit(1);
+  }
+}
+
+void eat_expected_string(FILE *in, char *str) {
+  int c;
+  while (*str != '\0') {
+    c = getc(in);
+    if (c != *str) {
+      fprintf(stderr, "Unexpected character %c\n", c);
+      exit(1);
+    }
+    str++;      
+  }
+}
+
 void init() {
   true = alloc_object();
   true->type = BOOLEAN;
@@ -99,6 +132,32 @@ object *eval(object *exp) {
   return exp;
 }
 
+object *read_character(FILE *in) {
+  int c;
+
+  c = getc(in);
+  switch (c) {
+  case EOF:
+    fprintf(stderr, "Unexpected ending of character");
+    exit(1);
+  case 'n':
+    if (peek(in) == 'e') {
+      eat_expected_string(in, "ewline");
+      peek_expected_delimiter(in);
+      return make_character('\n');
+    }
+    break;
+  case 's':
+    if (peek(in) == 'p') {
+      eat_expected_string(in, "pace");
+      peek_expected_delimiter(in);
+      return make_character(' ');
+    }
+    break;    
+  }
+  peek_expected_delimiter(in);
+  return make_character(c);
+}
 
 object *read(FILE *in) {
   int c;
@@ -116,6 +175,8 @@ object *read(FILE *in) {
       return true;
     case 'f':
       return false;
+    case '\\':
+      return read_character(in);
     default:
       fprintf(stderr, "Unknown boolean value");
       exit(1);
@@ -133,7 +194,7 @@ object *read(FILE *in) {
       num = (num * 10) + (c - '0');
     }
     num *= sign;
-    if (is_delimeter(c)) {
+    if (is_delimiter(c)) {
       ungetc(c, in);
       return make_fixnum(num);
     }
@@ -150,12 +211,28 @@ object *read(FILE *in) {
 }
 
 void write(object *obj) {
+  char c;
+  
   switch (obj->type) {
   case BOOLEAN:
     printf("#%c", is_false(obj) ? 'f' : 't');
     break;
   case FIXNUM:
     printf("%ld", obj->data.fixnum.value);
+    break;
+  case CHARACTER:
+    c = obj->data.fixnum.value;
+    switch (c) {
+    case '\n':
+      printf("#\\newline");
+      break;
+    case ' ':
+      printf("#\\space");
+      break;
+    default:
+      printf("#\\%c", c);
+      break;
+    }
     break;
   default:
     fprintf(stderr, "Unknown object type");
