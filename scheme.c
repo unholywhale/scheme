@@ -3,7 +3,7 @@
 #include <string.h>
 #include <ctype.h>
 
-typedef enum {FIXNUM} object_type;
+typedef enum {BOOLEAN, FIXNUM} object_type;
 
 typedef struct {
   object_type type;
@@ -11,8 +11,14 @@ typedef struct {
     struct {
       long value;
     } fixnum;
+    struct {
+      char value;
+    } boolean;
   } data;
 } object;
+
+object *true;
+object *false;
 
 object *alloc_object() {
   object *obj;
@@ -30,6 +36,22 @@ object *make_fixnum(long value) {
   obj->type = FIXNUM;
   obj->data.fixnum.value = value;
   return obj;
+}
+
+char is_fixnum(object *obj) {
+  return obj->type == FIXNUM;
+}
+
+char is_boolean(object *obj) {
+  return obj->type == BOOLEAN;
+}
+
+char is_false(object *obj) {
+  return obj == false;
+}
+
+char is_true(object *obj) {
+  return !is_false(obj);
 }
 
 char is_delimeter(int c) {
@@ -63,15 +85,14 @@ int peek(FILE *in) {
   return c;
 }
 
-void write(object *obj) {
-  switch (obj->type) {
-  case FIXNUM:
-    printf("%ld", obj->data.fixnum.value);
-    break;
-  default:
-    fprintf(stderr, "Unknown object type");
-    exit(1);
-  }
+void init() {
+  true = alloc_object();
+  true->type = BOOLEAN;
+  true->data.boolean.value = 1;
+
+  false = alloc_object();
+  false->type = BOOLEAN;
+  false->data.boolean.value = 0;  
 }
 
 object *eval(object *exp) {
@@ -88,7 +109,20 @@ object *read(FILE *in) {
 
   c = getc(in);
 
-  if (isdigit(c) || (c == '-' && isdigit(peek(in)))) {
+  if (c == '#') {
+    c = getc(in);
+    switch (c) {
+    case 't':
+      return true;
+    case 'f':
+      return false;
+    default:
+      fprintf(stderr, "Unknown boolean value");
+      exit(1);
+    }
+  }
+
+  if (isdigit(c) || (c == '-' && isdigit(peek(in)))) { /* fixnum */
     if (c == '-') {
       sign = -1;
     }
@@ -115,7 +149,23 @@ object *read(FILE *in) {
   
 }
 
+void write(object *obj) {
+  switch (obj->type) {
+  case BOOLEAN:
+    printf("#%c", is_false(obj) ? 'f' : 't');
+    break;
+  case FIXNUM:
+    printf("%ld", obj->data.fixnum.value);
+    break;
+  default:
+    fprintf(stderr, "Unknown object type");
+    exit(1);
+  }
+}
+
 int main() {
+  init();
+  
   while(1) {
     printf("> ");
     write(eval(read(stdin)));
