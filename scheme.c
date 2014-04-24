@@ -3,9 +3,9 @@
 #include <string.h>
 #include <ctype.h>
 
-typedef enum {BOOLEAN, CHARACTER, EMPTY_LIST, FIXNUM, STRING} object_type;
+typedef enum {BOOLEAN, CHARACTER, EMPTY_LIST, FIXNUM, PAIR, STRING} object_type;
 
-typedef struct {
+typedef struct object {
   object_type type;
   union {
     struct {
@@ -20,6 +20,10 @@ typedef struct {
     struct {
       char *value;
     } string;
+    struct {
+      struct object *car;
+      struct object *cdr;
+    } pair;
   } data;
 } object;
 
@@ -62,6 +66,26 @@ object *make_string(char *value) {
   }
   strcpy(obj->data.string.value, value);
   return obj;
+}
+
+object *cons(object *car, object *cdr) {
+  object *obj = alloc_object();
+  obj->type = PAIR;
+  obj->data.pair.car = car;
+  obj->data.pair.cdr = cdr;
+  return obj;
+}
+
+object *car(object *obj) {
+  return obj->data.pair.car;
+}
+
+object *cdr(object *obj) {
+  return obj->data.pair.cdr;
+}
+
+char is_pair(object *obj) {
+  return obj->type == PAIR;
 }
 
 char is_fixnum(object *obj) {
@@ -182,6 +206,45 @@ object *read_character(FILE *in) {
   return make_character(c);
 }
 
+object *read(FILE *in);
+
+object *read_pair(FILE *in) {
+  int c;
+  object *car_obj;
+  object *cdr_obj;
+
+  c = getc(in);
+  if (c == ')') {
+    return empty_list;
+  }
+  ungetc(c, in);
+  car_obj = read(in);
+
+  eat_whitespace(in);
+
+  c = getc(in);
+  if (c == '.') {
+    c = peek(in);
+    if(!is_delimiter(c)) {
+      fprintf(stderr, "dot not followed by delimiter\n");
+      exit(1);
+    }
+    cdr_obj = read(in);
+    eat_whitespace(in);
+    c = getc(in);
+    if (c != ')') {
+      fprintf(stderr, "No expected trailing )\n");
+      exit(1);
+    }
+    return cons(car_obj, cdr_obj);
+  }
+  else {
+    ungetc(c, in);
+    cdr_obj = read_pair(in);
+    return cons(car_obj, cdr_obj);
+  }
+}
+
 object *read(FILE *in) {
   int c;
   int i;
@@ -253,20 +316,35 @@ object *read(FILE *in) {
     return make_string(str);
   }
   else if (c == '(') {
-    c = getc(in);
-    if (c == ')') {
-      return empty_list;
-    }
-    else {
-      fprintf(stderr, "Incorrect list termination, expecting )\n");
-      exit(1);
-    }
+    return read_pair(in);
   }
   else {
     fprintf(stderr, "Bad input. Unexpected character %c", c);
     exit(1);
   }
   exit(1);
+}
+
+void write(object *obj);
+
+void write_pair(object *obj) {
+  object *car_obj;
+  object *cdr_obj;
+
+  car_obj = car(obj);
+  cdr_obj = cdr(obj);
+  write(car_obj);
+  if (is_pair(cdr_obj)) {
+    printf(" ");
+    write_pair(cdr_obj);
+  }
+  else if (cdr_obj == empty_list) {
+    return;
+  }
+  else {
+    printf(" . ");
+    write(cdr_obj);
+  }
 }
 
 void write(object *obj) {
@@ -318,6 +396,11 @@ void write(object *obj) {
     }
     putchar('"');
     break;
+  case PAIR:
+    printf("(");
+
+    write_pair(obj);
+    printf(")");
   default:
     fprintf(stderr, "Unknown object type");
     exit(1);
