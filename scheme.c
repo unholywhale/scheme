@@ -3,7 +3,7 @@
 #include <string.h>
 #include <ctype.h>
 
-typedef enum {BOOLEAN, CHARACTER, FIXNUM} object_type;
+typedef enum {BOOLEAN, CHARACTER, FIXNUM, STRING} object_type;
 
 typedef struct {
   object_type type;
@@ -17,6 +17,9 @@ typedef struct {
     struct {
       char value;
     } character;
+    struct {
+      char *value;
+    } string;
   } data;
 } object;
 
@@ -48,6 +51,18 @@ object *make_character(char value) {
   return obj;
 }
 
+object *make_string(char *value) {
+  object *obj = alloc_object();
+  obj->type = STRING;
+  obj->data.string.value = malloc(strlen(value) + 1);
+  if (obj->data.string.value == NULL) {
+    fprintf(stderr, "Out of memory\n");
+    exit(1);
+  }
+  strcpy(obj->data.string.value, value);
+  return obj;
+}
+
 char is_fixnum(object *obj) {
   return obj->type == FIXNUM;
 }
@@ -60,6 +75,10 @@ char is_character(object *obj) {
   return obj->type == CHARACTER;
 }
 
+char is_string(object *obj) {
+  return obj->type == STRING;
+}
+
 char is_false(object *obj) {
   return obj == false;
 }
@@ -70,8 +89,8 @@ char is_true(object *obj) {
 
 char is_delimiter(int c) {
   return isspace(c) || c == EOF ||
-          c == '('  || c == ')' ||
-          c == '"'  || c == ';';
+    c == '('  || c == ')' ||
+    c == '"'  || c == ';';
 }
 
 void eat_whitespace(FILE *in) {
@@ -161,7 +180,10 @@ object *read_character(FILE *in) {
 
 object *read(FILE *in) {
   int c;
+  int i;
   long num = 0;
+#define MAX_BUFF 1000
+  char str[MAX_BUFF];
   short sign = 1;
   
   eat_whitespace(in);
@@ -182,8 +204,7 @@ object *read(FILE *in) {
       exit(1);
     }
   }
-
-  if (isdigit(c) || (c == '-' && isdigit(peek(in)))) { /* fixnum */
+  else if (isdigit(c) || (c == '-' && isdigit(peek(in)))) { /* fixnum */
     if (c == '-') {
       sign = -1;
     }
@@ -203,15 +224,41 @@ object *read(FILE *in) {
       exit(1);
     }
   }
+  else if (c == '"') {
+    i = 0;
+    while ((c = getc(in)) != '"') {
+      if (c == '\\') {
+	c = getc(in);
+	if (c == 'n') {
+	  c = '\n';
+	}
+      }
+      if (c == EOF) {
+	fprintf(stderr, "Non-terminated string\n");
+	exit(1);
+      }
+      if (i < MAX_BUFF - 1) {
+	str[i++] = c;
+      }
+      else {
+	fprintf(stderr, "String is too long\n");
+	exit(1);
+      }
+    }
+    str[i] = '\0';
+    return make_string(str);
+    
+  }
   else {
-    fprintf(stderr, "Unexpected character %c", c);
+    fprintf(stderr, "Bad input. Unexpected character %c", c);
     exit(1);
   }
-  
+  exit(1);
 }
 
 void write(object *obj) {
   char c;
+  char *str;
   
   switch (obj->type) {
   case BOOLEAN:
@@ -233,6 +280,27 @@ void write(object *obj) {
       printf("#\\%c", c);
       break;
     }
+    break;
+  case STRING:
+    str = obj->data.string.value;
+    putchar('"');
+    while (*str != '\0') {
+      switch (*str) {
+      case '\n':
+	printf("\\n");
+	break;
+      case '\\':
+	printf("\\\\");
+	break;
+      case '"':
+	printf("\\\"");
+	break;
+      default:
+	putchar(*str);
+      }
+      str++;
+    }
+    putchar('"');
     break;
   default:
     fprintf(stderr, "Unknown object type");
