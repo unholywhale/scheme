@@ -3,7 +3,7 @@
 #include <string.h>
 #include <ctype.h>
 
-typedef enum {BOOLEAN, CHARACTER, FIXNUM, STRING} object_type;
+typedef enum {BOOLEAN, CHARACTER, EMPTY_LIST, FIXNUM, STRING} object_type;
 
 typedef struct {
   object_type type;
@@ -23,6 +23,7 @@ typedef struct {
   } data;
 } object;
 
+object *empty_list;
 object *true;
 object *false;
 
@@ -138,6 +139,9 @@ void eat_expected_string(FILE *in, char *str) {
 }
 
 void init() {
+  empty_list = alloc_object();
+  empty_list->type = EMPTY_LIST;
+  
   true = alloc_object();
   true->type = BOOLEAN;
   true->data.boolean.value = 1;
@@ -247,7 +251,16 @@ object *read(FILE *in) {
     }
     str[i] = '\0';
     return make_string(str);
-    
+  }
+  else if (c == '(') {
+    c = getc(in);
+    if (c == ')') {
+      return empty_list;
+    }
+    else {
+      fprintf(stderr, "Incorrect list termination, expecting )\n");
+      exit(1);
+    }
   }
   else {
     fprintf(stderr, "Bad input. Unexpected character %c", c);
@@ -261,6 +274,9 @@ void write(object *obj) {
   char *str;
   
   switch (obj->type) {
+  case EMPTY_LIST:
+    printf("()");
+    break;
   case BOOLEAN:
     printf("#%c", is_false(obj) ? 'f' : 't');
     break;
