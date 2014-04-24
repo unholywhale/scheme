@@ -398,9 +398,9 @@ void write(object *obj) {
     break;
   case PAIR:
     printf("(");
-
     write_pair(obj);
     printf(")");
+    break;
   default:
     fprintf(stderr, "Unknown object type");
     exit(1);
