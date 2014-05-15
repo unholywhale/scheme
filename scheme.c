@@ -3,7 +3,7 @@
 #include <string.h>
 #include <ctype.h>
 
-typedef enum {BOOLEAN, CHARACTER, EMPTY_LIST, FIXNUM, PAIR, STRING} object_type;
+typedef enum {BOOLEAN, CHARACTER, EMPTY_LIST, FIXNUM, PAIR, STRING, SYMBOL} object_type;
 
 typedef struct object {
   object_type type;
@@ -21,6 +21,9 @@ typedef struct object {
       char *value;
     } string;
     struct {
+      char *value;
+    } symbol;
+    struct {
       struct object *car;
       struct object *cdr;
     } pair;
@@ -30,6 +33,7 @@ typedef struct object {
 object *empty_list;
 object *true;
 object *false;
+object *symbol_table;
 
 object *alloc_object() {
   object *obj;
@@ -40,6 +44,69 @@ object *alloc_object() {
     exit(1);
   }
   return obj;
+}
+
+char is_pair(object *obj) {
+  return obj->type == PAIR;
+}
+
+char is_fixnum(object *obj) {
+  return obj->type == FIXNUM;
+}
+
+char is_boolean(object *obj) {
+  return obj->type == BOOLEAN;
+}
+
+char is_character(object *obj) {
+  return obj == empty_list;
+}
+
+char is_string(object *obj) {
+  return obj->type == STRING;
+}
+
+char is_symbol(object *obj) {
+  return obj->type == SYMBOL;
+}
+
+char is_empty_list(object *obj) {
+  return obj->type == EMPTY_LIST;
+}   
+
+char is_false(object *obj) {
+  return obj == false;
+}
+
+char is_true(object *obj) {
+  return !is_false(obj);
+}
+
+char is_initial(int c) {
+  return isalpha(c) || c == '*' || c == '/' || c == '>' ||
+    c == '<' || c == '=' || c == '?' || c == '!';
+}
+
+char is_delimiter(int c) {
+  return isspace(c) || c == EOF ||
+    c == '('  || c == ')' ||
+    c == '"'  || c == ';';
+}
+
+object *cons(object *car, object *cdr) {
+  object *obj = alloc_object();
+  obj->type = PAIR;
+  obj->data.pair.car = car;
+  obj->data.pair.cdr = cdr;
+  return obj;
+}
+
+object *car(object *obj) {
+  return obj->data.pair.car;
+}
+
+object *cdr(object *obj) {
+  return obj->data.pair.cdr;
 }
 
 object *make_fixnum(long value) {
@@ -68,54 +135,27 @@ object *make_string(char *value) {
   return obj;
 }
 
-object *cons(object *car, object *cdr) {
-  object *obj = alloc_object();
-  obj->type = PAIR;
-  obj->data.pair.car = car;
-  obj->data.pair.cdr = cdr;
+object *make_symbol(char *value) {
+  object *obj;
+  object *element;
+
+  element = symbol_table;
+  while(!is_empty_list(element)) {
+    if (strcmp(car(element)->data.symbol.value, value) == 0)
+      return car(element);
+    element = cdr(element);
+  }
+
+  obj = alloc_object();
+  obj->type = SYMBOL;
+  obj->data.symbol.value = malloc(strlen(value) + 1);
+  if (obj->data.symbol.value == NULL) {
+    fprintf(stderr, "Out of memory\n");
+    exit(1);
+  }
+  strcpy(obj->data.symbol.value, value);
+  symbol_table = cons(obj, symbol_table);
   return obj;
-}
-
-object *car(object *obj) {
-  return obj->data.pair.car;
-}
-
-object *cdr(object *obj) {
-  return obj->data.pair.cdr;
-}
-
-char is_pair(object *obj) {
-  return obj->type == PAIR;
-}
-
-char is_fixnum(object *obj) {
-  return obj->type == FIXNUM;
-}
-
-char is_boolean(object *obj) {
-  return obj->type == BOOLEAN;
-}
-
-char is_character(object *obj) {
-  return obj->type == CHARACTER;
-}
-
-char is_string(object *obj) {
-  return obj->type == STRING;
-}
-
-char is_false(object *obj) {
-  return obj == false;
-}
-
-char is_true(object *obj) {
-  return !is_false(obj);
-}
-
-char is_delimiter(int c) {
-  return isspace(c) || c == EOF ||
-    c == '('  || c == ')' ||
-    c == '"'  || c == ';';
 }
 
 void eat_whitespace(FILE *in) {
@@ -172,7 +212,9 @@ void init() {
 
   false = alloc_object();
   false->type = BOOLEAN;
-  false->data.boolean.value = 0;  
+  false->data.boolean.value = 0;
+
+  symbol_table = empty_list;
 }
 
 object *eval(object *exp) {
@@ -291,6 +333,30 @@ object *read(FILE *in) {
       exit(1);
     }
   }
+  else if (is_initial(c) ||
+	   ((c == '+' || c == '-') &&
+	    is_delimiter(peek(in)))) {
+    i = 0;
+    while (is_initial(c) || isdigit(c)) {
+      if (i < MAX_BUFF - 1) {
+	str[i++] = c;
+      }
+      else {
+	fprintf(stderr, "Symbol is too long");
+	exit(1);
+      }
+      c = getc(in);
+    }
+    if (is_delimiter(c)) {
+      str[i] = '\0';
+      ungetc(c, in);
+      return make_symbol(str);
+    }
+    else {
+      fprintf(stderr, "Symbol not followed by delimiter");
+      exit(1);
+    }
+  }
   else if (c == '"') {
     i = 0;
     while ((c = getc(in)) != '"') {
@@ -395,6 +461,9 @@ void write(object *obj) {
       str++;
     }
     putchar('"');
+    break;
+  case SYMBOL:
+    printf("%s", obj->data.symbol.value);
     break;
   case PAIR:
     printf("(");
